@@ -1,0 +1,99 @@
+from tkinter import *
+from tkinter import filedialog
+from pathlib import Path
+import cv2
+import pytesseract
+import sys
+import time
+import botocore
+import boto3
+import os
+from PIL import ImageTk, Image
+import numpy as np
+from PIL import ImageEnhance
+j = int(input(print("NUMBER OF DOCUMENTS TO SCAN")))
+s = int(input("ENTER THE LANGUAGE\n1.ENGLISH\n2.HINDI\n3.TAMIL"))
+if(s == 1):
+    find = "eng"
+elif(s==2):
+    find = "hin"
+else:
+    find="tam"
+
+for v in range(0, j):
+    a = input("ENTER THE DOCUMENT NAME:")
+    e = int(input(print("NUMBER OF PAGES IN THE DOCUMENT")))
+    for f in range(0, e):
+        cam = cv2.VideoCapture(0)
+        while True:
+            ret, image = cam.read()
+            cv2.imshow('Imagetest', image)
+            k = cv2.waitKey(1)
+            if k != -1:
+                break
+        cv2.imwrite(r'/home/pi/testimage1.jpg', image)
+        # newline= Label(root)
+        # uploaded_img=Label(root)
+        root = Tk()
+        Actual_image = cv2.imread(r'/home/pi/testimage1.jpg')
+        Sample_img = cv2.resize(Actual_image, None, fx=1.2, fy=1.2, interpolation=cv2.INTER_CUBIC)
+        Image_ht, Image_wd, Image_thickness = Sample_img.shape
+        Sample_img = cv2.cvtColor(Sample_img, cv2.COLOR_BGR2RGB)
+        Sample_img = cv2.cvtColor(Sample_img, cv2.COLOR_BGR2GRAY)
+        kernel = np.ones((1, 1), np.uint8)
+        #img = cv2.dilate(Sample_img, kernel, iterations=1)
+        ad = cv2.erode(Sample_img, kernel, iterations=1)
+        #ad = cv2.detailEnhance(Sample_img, sigma_s=10, sigma_r=0.15)
+
+        #ad = cv2.adaptiveThreshold(Sample_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 85, 31)
+        #ad= cv2.threshold(cv2.GaussianBlur(Sample_img, (5, 5), 0), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        #cv2.threshold(cv2.bilateralFilter(Sample_img, 5, 75, 75), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        #cv2.threshold(cv2.medianBlur(Sample_img, 3), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        ad = cv2.adaptiveThreshold(ad, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV,199,5)
+        #cv2.adaptiveThreshold(cv2.bilateralFilter(Sample_img, 9, 75, 75), 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY, 31, 2)
+        #ad = cv2.adaptiveThreshold(cv2.medianBlur(Sample_img, 3), 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 2)
+        #pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+        texts = pytesseract.image_to_data(ad,lang=find)
+        mytext = ""
+        prevy = 0
+        session = boto3.Session(
+            aws_access_key_id='AKIAQWO2CISPBHSGC63O',
+            aws_secret_access_key='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')
+        for cnt, text in enumerate(texts.splitlines()):
+            if cnt == 0:
+                continue
+            text = text.split()
+            if len(text) == 12:
+                x, y, w, h = int(text[6]), int(text[7]), int(text[8]), int(text[9])
+                if (len(mytext) == 0):
+                    prey = y
+                if (prevy - y >= 20 or y - prevy >= 20):
+                    b = str(v)
+                    file = open('OCR' + a + '.txt', 'a+')
+                    print(mytext)
+                    file.write(mytext)
+                    Label(root, text=mytext, font=('Times', 15, 'bold')).pack()
+                    mytext = ""
+                    file.close()
+                mytext = mytext + text[11] + " "
+                prevy = y
+
+        Label(root, text=mytext, font=('Times', 15, 'bold')).pack()
+        cam.release()
+        cv2.destroyAllWindows()
+        s3 = boto3.client('s3')
+        s3.upload_file('OCR' + a + '.txt', 'lazymob-bucket-1', a + '.txt')
+    bucket_name = 'lazymob-bucket-1'
+    response = s3.list_objects_v2(Bucket=bucket_name)
+    files = response.get("Contents")
+    for file in files:
+        print(f"file_name: {file['Key']}, size: {file['Size']}")
+    q = input("ENTER THE FILE NAME TO DOWNLOAD")
+    s3 = boto3.resource('s3')
+    try:
+        s3.Bucket(bucket_name).download_file(q, q)
+    except botocore.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == "404":
+            print("The object does not exist.")
+        else:
+            raise
